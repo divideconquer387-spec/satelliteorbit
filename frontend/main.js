@@ -7,7 +7,7 @@ const lonEl = document.getElementById("longitude");
 const altEl = document.getElementById("altitude");
 
 const EARTH_RADIUS = 4;
-const API_BASE = "http://localhost:3000/api/satellite";
+const API_BASE = `${window.location.origin}/api/satellite`;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1200);
