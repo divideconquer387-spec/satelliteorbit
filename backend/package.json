@@ -1,20 +1,12 @@
 {
-  "name": "backend",
+  "name": "satellite-orbit",
+  "private": true,
   "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
+  "description": "Railway entrypoint for SatelliteOrbit monorepo",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
-    "test": "node --check server.js && node --check satelliteRoute.js && node --check db.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^5.2.1",
-    "mysql2": "^3.16.1",
-    "satellite.js": "^6.0.2"
+    "start": "npm --prefix backend start",
+    "dev": "npm --prefix backend dev",
+    "test": "npm --prefix backend test",
+    "postinstall": "npm --prefix backend install"
   }
 }
