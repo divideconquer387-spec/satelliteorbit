@@ -1,4 +1,4 @@
-const express = require("express");
+
 const satellite = require("satellite.js");
 const { db, getDatabaseErrorResponse } = require("./db");
 
@@ -24,7 +24,6 @@ async function getTleByNorad(noradId) {
 }
 
 function computeGeoPoint(satrec, time) {
-
   const positionAndVelocity = satellite.propagate(satrec, time);
 
   if (!positionAndVelocity || !positionAndVelocity.position) {
@@ -32,11 +31,7 @@ function computeGeoPoint(satrec, time) {
   }
 
   const gmst = satellite.gstime(time);
-
-  const geo = satellite.eciToGeodetic(
-    positionAndVelocity.position,
-    gmst
-  );
+  const geo = satellite.eciToGeodetic(positionAndVelocity.position, gmst);
 
   return {
     latitude: deg(geo.latitude),
@@ -65,6 +60,44 @@ router.post("/", async (req, res) => {
   }
 });
 
+router.get("/", async (_req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT s.name, s.norad_id, t.tle_line1, t.tle_line2
+      FROM satellites s
+      INNER JOIN tle_data t ON s.norad_id = t.norad_id
+      ORDER BY s.norad_id ASC
+    `
+    );
+
+    const now = new Date();
+    const satellites = [];
+
+    for (const row of rows) {
+      const satrec = satellite.twoline2satrec(row.tle_line1, row.tle_line2);
+      const point = computeGeoPoint(satrec, now);
+
+      if (!point) {
+        continue;
+      }
+
+      satellites.push({
+        name: row.name,
+        noradId: row.norad_id,
+        timestamp: now.toISOString(),
+        ...point
+      });
+    }
+
+    res.json(satellites);
+  } catch (error) {
+    console.error("Satellite list lookup failed:", error.message);
+    const { status, body } = getDatabaseErrorResponse(error);
+    res.status(status).json(body);
+  }
+});
+
 router.get("/:norad", async (req, res) => {
   const noradId = parseNorad(req.params.norad);
 
@@ -81,7 +114,6 @@ router.get("/:norad", async (req, res) => {
 
     const satrec = satellite.twoline2satrec(tle.tle_line1, tle.tle_line2);
     const now = new Date();
-
     const point = computeGeoPoint(satrec, now);
 
     if (!point) {

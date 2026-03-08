@@ -3,14 +3,17 @@ const noradInput = document.getElementById("norad");
 const trackBtn = document.getElementById("track-btn");
 
 const statusEl = document.getElementById("status");
+const selectedNoradEl = document.getElementById("selected-norad");
 const latEl = document.getElementById("latitude");
 const lonEl = document.getElementById("longitude");
 const altEl = document.getElementById("altitude");
 
 const EARTH_RADIUS = 4;
+const UPDATE_INTERVAL_MS = 3000;
 
 /* API */
-const API_BASE = "https://satelliteorbit-production.up.railway.app/api/satellite";
+const apiBaseMeta = document.querySelector('meta[name="api-base"]')?.content?.trim();
+const API_BASE = apiBaseMeta || "/api/satellite";
 
 /* Scene */
 const scene = new THREE.Scene();
@@ -41,30 +44,46 @@ controls.maxDistance = 30;
 const earthTexture = new THREE.TextureLoader().load("https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg");
 const earth = new THREE.Mesh(
   new THREE.SphereGeometry(EARTH_RADIUS, 64, 64),
-  new THREE.MeshBasicMaterial({ map: earthTexture }) 
+  new THREE.MeshBasicMaterial({ map: earthTexture })
 );
 earthSystem.add(earth);
 
 /* Satellite management */
-const satellites = [];
+const satellitesByNorad = new Map();
+let selectedSatellite = null;
 
 function createSatelliteMarker(color = 0xffffff) {
   const marker = new THREE.Mesh(
     new THREE.SphereGeometry(0.04, 12, 12),
     new THREE.MeshBasicMaterial({ color })
   );
+
   marker.visible = false;
   earthSystem.add(marker);
 
+  const groundLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([]),
+    new THREE.LineBasicMaterial({ color: 0xffcc66 })
+  );
+  earthSystem.add(groundLine);
 
-  return { marker, targetPosition: new THREE.Vector3(), groundTrack: [], data};
+  return {
+    marker,
+    groundLine,
+    groundTrack: [],
+    targetPosition: new THREE.Vector3(),
+    data: null,
+    norad: null,
+    name: null
+  };
 }
 
 /* Lat/Lon to 3D */
 function latLonToVector3(lat, lon, altitudeKm = 0) {
-  const radius = EARTH_RADIUS + (altitudeKm / 6371) * EARTH_RADIUS; // scale altitude proportionally
-  const phi = (90 - lat) * Math.PI / 180;
-  const theta = (lon + 180) * Math.PI / 180;
+  const radius = EARTH_RADIUS + (altitudeKm / 6371) * EARTH_RADIUS;
+  const phi = ((90 - lat) * Math.PI) / 180;
+  const theta = ((lon + 180) * Math.PI) / 180;
+
   return new THREE.Vector3(
     -(radius * Math.sin(phi) * Math.cos(theta)),
     radius * Math.cos(phi),
@@ -72,87 +91,129 @@ function latLonToVector3(lat, lon, altitudeKm = 0) {
   );
 }
 
-async function fetchAllSatellites() {
-  try {
-    const res = await fetch(API_BASE); // fetch all satellites
-    if (!res.ok) throw new Error("Failed to fetch satellites");
-    const data = await res.json();
+function updateSatelliteFromData(sat, satData) {
+  sat.data = satData;
+  sat.norad = satData.noradId;
+  sat.name = satData.name;
 
-    data.forEach(satData => {
-      const sat = createSatelliteMarker(satData);
-      satellites.push(sat);
+  const pos = latLonToVector3(satData.latitude, satData.longitude, satData.altitude_km);
+  sat.targetPosition.copy(pos);
+  sat.marker.visible = true;
 
-      const pos = latLonToVector3(satData.latitude, satData.longitude, satData.altitude_km);
-      sat.targetPosition.copy(pos);
-      sat.marker.visible = true;
+  // Keep track line at satellite altitude (not projected to Earth surface).
+  sat.groundTrack.push(pos.clone());
+  if (sat.groundTrack.length > 500) {
+    sat.groundTrack.shift();
+  }
 
-      // Add initial ground track point
-      const surfacePoint = latLonToVector3(satData.latitude, satData.longitude, 0);
-      sat.groundTrack.push(surfacePoint);
-      const geometry = new THREE.BufferGeometry().setFromPoints(sat.groundTrack);
-      const material = new THREE.LineBasicMaterial({ color: 0xffcc66 });
-      sat.groundLine = new THREE.Line(geometry, material);
-      earthSystem.add(sat.groundLine);
-    });
-  } catch (err) {
-    console.error(err);
+  sat.groundLine.geometry.dispose();
+  sat.groundLine.geometry = new THREE.BufferGeometry().setFromPoints(sat.groundTrack);
+
+  if (selectedSatellite === sat) {
+    renderSelectedSatelliteInfo(sat);
   }
 }
 
-/* Fetch satellite data */
-async function fetchSatellitePosition(norad) {
-  const res = await fetch(`${API_BASE}/${norad}`);
-  if (!res.ok) throw new Error("Satellite not found");
-  return res.json();
+async function fetchAllSatellites() {
+  const response = await fetch(API_BASE);
+
+  if (!response.ok) {
+    let details = "";
+
+    try {
+      const body = await response.json();
+      details = body?.error || body?.details || "";
+    } catch (_error) {
+      details = "";
+    }
+
+    throw new Error(`Failed to fetch satellites (${response.status})${details ? `: ${details}` : ""}`);
+  }
+
+  const payload = await response.json();
+
+  if (!Array.isArray(payload)) {
+    throw new Error("Invalid satellite payload from API");
+  }
+
+  return payload;
 }
 
-/* Add satellite */
+async function refreshSatellites() {
+  try {
+    const allSatellites = await fetchAllSatellites();
+
+    allSatellites.forEach((satData) => {
+      let sat = satellitesByNorad.get(satData.noradId);
+
+      if (!sat) {
+        sat = createSatelliteMarker();
+        satellitesByNorad.set(satData.noradId, sat);
+      }
+
+      updateSatelliteFromData(sat, satData);
+    });
+
+    setStatus(`Tracking ${allSatellites.length} satellites • updates every 3s`);
+  } catch (error) {
+    console.error(error);
+    setStatus(`Unable to update satellites: ${error.message}`, true);
+  }
+}
+
+/* Add single satellite from user input */
 async function addSatellite(norad) {
-  const sat = createSatelliteMarker();
-  sat.norad = norad;
-  satellites.push(sat);
-  await updateSatellite(sat);
+  if (!norad) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/${norad}`);
+
+    if (!res.ok) {
+      throw new Error(`Satellite ${norad} not found`);
+    }
+
+    const satData = await res.json();
+
+    let sat = satellitesByNorad.get(satData.noradId);
+    if (!sat) {
+      sat = createSatelliteMarker(0x66ffcc);
+      satellitesByNorad.set(satData.noradId, sat);
+    }
+
+    updateSatelliteFromData(sat, satData);
+    setStatus(`Added NORAD ${satData.noradId}`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
 }
-
-/* Update single satellite */
-function updateSatellites() {
-  satellites.forEach(sat => {
-    // Update 3D position
-    const pos = latLonToVector3(sat.data.latitude, sat.data.longitude, sat.data.altitude_km);
-    sat.targetPosition.copy(pos);
-
-    // Update ground track
-    const surfacePoint = latLonToVector3(sat.data.latitude, sat.data.longitude, 0);
-    sat.groundTrack.push(surfacePoint);
-    if (sat.groundTrack.length > 500) sat.groundTrack.shift();
-
-    // Refresh line
-    if (sat.groundLine) earthSystem.remove(sat.groundLine);
-    const geometry = new THREE.BufferGeometry().setFromPoints(sat.groundTrack);
-    sat.groundLine.geometry = geometry; // update geometry
-    earthSystem.add(sat.groundLine);
-  });
-}
-
-// Call update every 3 seconds (or however often you want)
-setInterval(updateSatellites, 3000);
 
 /* Click info */
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
-window.addEventListener("click", e => {
+
+function renderSelectedSatelliteInfo(sat) {
+  if (!sat || !sat.data) return;
+
+  selectedNoradEl.textContent = sat.norad;
+  latEl.textContent = `${sat.data.latitude.toFixed(2)}°`;
+  lonEl.textContent = `${sat.data.longitude.toFixed(2)}°`;
+  altEl.textContent = `${sat.data.altitude_km.toFixed(2)} km`;
+  setStatus(`Selected NORAD ${sat.norad}${sat.name ? ` (${sat.name})` : ""}`);
+}
+
+window.addEventListener("click", (e) => {
   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
 
-  const intersects = satellites.map(s => s.marker);
-  const hit = raycaster.intersectObjects(intersects);
-  if (hit.length > 0) {
-    const sat = satellites.find(s => s.marker === hit[0].object);
-    setStatus(`NORAD: ${sat.norad}`);
-    latEl.textContent = sat.targetPosition.y.toFixed(2);
-    lonEl.textContent = sat.targetPosition.z.toFixed(2);
-    altEl.textContent = (sat.targetPosition.length() - EARTH_RADIUS).toFixed(2) + " km";
+  const markers = Array.from(satellitesByNorad.values()).map((sat) => sat.marker);
+  const hits = raycaster.intersectObjects(markers);
+
+  if (hits.length > 0) {
+    selectedSatellite = Array.from(satellitesByNorad.values()).find(
+      (sat) => sat.marker === hits[0].object
+    );
+    renderSelectedSatelliteInfo(selectedSatellite);
   }
 });
 
@@ -162,18 +223,31 @@ function setStatus(msg, isError = false) {
   statusEl.style.color = isError ? "#ff8d93" : "#d0dcf6";
 }
 
+trackBtn.addEventListener("click", () => {
+  const ids = noradInput.value
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  ids.forEach((id) => addSatellite(id));
+});
+
 function animate() {
-  satellites.forEach(sat => {
-    sat.marker.position.lerp(sat.targetPosition, 0.15);
+  satellitesByNorad.forEach((sat) => {
+    sat.marker.position.lerp(sat.targetPosition, 0.2);
   });
+
   controls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
-animate();
 
-/* Track button - enter multiple NORAD IDs separated by commas */
-trackBtn.addEventListener("click", () => {
-  const ids = noradInput.value.split(",").map(x => x.trim());
-  ids.forEach(id => addSatellite(id));
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+refreshSatellites();
+setInterval(refreshSatellites, UPDATE_INTERVAL_MS);
+animate();
