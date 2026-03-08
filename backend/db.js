@@ -29,11 +29,11 @@ const useSsl = ["1", "true", "required"].includes(String(sslFlag).toLowerCase())
 const db = connectionUri
   ? mysql.createPool(connectionUri)
   : mysql.createPool({
-      host: DB_HOST || MYSQLHOST || "localhost",
-      port: Number(DB_PORT || MYSQLPORT || 3306),
+      host: DB_HOST || MYSQLHOST || "centerbeam.proxy.rlwy.net",
+      port: Number(DB_PORT || MYSQLPORT || 44905),
       user: DB_USER || MYSQLUSER || "root",
-      password: DB_PASSWORD || MYSQLPASSWORD || "",
-      database: DB_NAME || MYSQLDATABASE || "satellite_tracker",
+      password: DB_PASSWORD || MYSQLPASSWORD || "zBkJtGXReVesgChFbwyaTmwcASEoSoHm",
+      database: DB_NAME || MYSQLDATABASE || "railway",
       ssl: useSsl ? { rejectUnauthorized: true } : undefined,
       waitForConnections: true,
       connectionLimit: 10,
