@@ -66,6 +66,8 @@ const earth = new THREE.Mesh(
 
 earthSystem.add(earth);
 
+console.log("Scene loaded");
+
 /* Atmosphere */
 
 const atmosphere = new THREE.Mesh(
