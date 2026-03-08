@@ -277,4 +277,4 @@ noradInput.addEventListener("keydown", e => {
 //   requestAnimationFrame(animate);
 // }
 
-// animate();
+animate();
