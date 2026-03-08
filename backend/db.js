@@ -23,6 +23,9 @@ const {
 const connectionUri = MYSQL_URL || DATABASE_URL;
 const isRailwayRuntime = Boolean(RAILWAY_STATIC_URL || RAILWAY_PUBLIC_DOMAIN || MYSQLHOST);
 
+const hasDiscreteDbConfig = Boolean((DB_HOST || MYSQLHOST) && (DB_NAME || MYSQLDATABASE));
+const hasDatabaseConfig = Boolean(connectionUri || hasDiscreteDbConfig);
+
 function shouldUseSsl() {
   const sslFlag = MYSQL_SSL ?? DB_SSL;
 
@@ -38,6 +41,10 @@ function getSslConfig() {
 }
 
 function buildPoolConfig() {
+  if (!hasDatabaseConfig) {
+    return null;
+  }
+
   if (connectionUri) {
     return {
       uri: connectionUri,
@@ -49,11 +56,11 @@ function buildPoolConfig() {
   }
 
   return {
-    host: DB_HOST || MYSQLHOST || "127.0.0.1",
+    host: DB_HOST || MYSQLHOST,
     port: Number(DB_PORT || MYSQLPORT || 3306),
     user: DB_USER || MYSQLUSER || "root",
     password: DB_PASSWORD || MYSQLPASSWORD || "",
-    database: DB_NAME || MYSQLDATABASE || "railway",
+    database: DB_NAME || MYSQLDATABASE,
     ssl: getSslConfig(),
     waitForConnections: true,
     connectionLimit: 10,
@@ -62,9 +69,39 @@ function buildPoolConfig() {
 }
 
 const poolConfig = buildPoolConfig();
-const db = poolConfig.uri ? mysql.createPool(poolConfig.uri) : mysql.createPool(poolConfig);
+
+function createDisabledDatabaseClient() {
+  const unavailableError = new Error(
+    "Database is not configured. Set MYSQL_URL (or DATABASE_URL) or provide DB_HOST/DB_NAME."
+  );
+
+  return {
+    async query() {
+      throw unavailableError;
+    },
+    async getConnection() {
+      throw unavailableError;
+    },
+    async end() {
+      return undefined;
+    }
+  };
+}
+
+const db = poolConfig
+  ? poolConfig.uri
+    ? mysql.createPool(poolConfig.uri)
+    : mysql.createPool(poolConfig)
+  : createDisabledDatabaseClient();
 
 async function checkConnection() {
+  if (!hasDatabaseConfig) {
+    console.warn(
+      "Database configuration not found. Starting API without DB connectivity; database-backed endpoints will return errors."
+    );
+    return;
+  }
+
   try {
     const connection = await db.getConnection();
     await connection.ping();
@@ -77,6 +114,10 @@ async function checkConnection() {
 }
 
 async function initializeDatabase() {
+  if (!hasDatabaseConfig) {
+    return;
+  }
+
   await db.query(`
     CREATE TABLE IF NOT EXISTS satellites (
       id INT AUTO_INCREMENT PRIMARY KEY,
