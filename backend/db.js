@@ -1,5 +1,9 @@
-require("dotenv").config();
+const path = require("path");
+const dotenv = require("dotenv");
 const mysql = require("mysql2/promise");
+
+dotenv.config();
+dotenv.config({ path: path.join(__dirname, ".env") });
 
 const {
   MYSQL_URL,
@@ -143,4 +147,26 @@ async function initializeDatabase() {
   `);
 }
 
-module.exports = { db, checkConnection, initializeDatabase };
+
+function isDatabaseUnavailableError(error) {
+  return Boolean(error && typeof error.message === "string" && error.message.startsWith("Database is not configured."));
+}
+
+function getDatabaseErrorResponse(error) {
+  if (isDatabaseUnavailableError(error)) {
+    return {
+      status: 503,
+      body: {
+        error: "Database is not configured",
+        details: "Set MYSQL_URL (or DATABASE_URL) or DB_HOST + DB_NAME before using database-backed endpoints."
+      }
+    };
+  }
+
+  return {
+    status: 500,
+    body: { error: "Database error" }
+  };
+}
+
+module.exports = { db, checkConnection, initializeDatabase, getDatabaseErrorResponse };

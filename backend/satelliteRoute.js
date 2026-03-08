@@ -1,6 +1,6 @@
 const express = require("express");
 const satellite = require("satellite.js");
-const { db } = require("./db");
+const { db, getDatabaseErrorResponse } = require("./db");
 
 const router = express.Router();
 const EARTH_RADIUS_KM = 6371;
@@ -24,10 +24,9 @@ async function getTleByNorad(noradId) {
 }
 
 function computeGeoPoint(satrec, time) {
-  const positionAndVelocity = satellite.propagate(satrec, time);
+  const positionAndVelocity = satellite.propagate(satrec, time);}
 
-  if (!positionAndVelocity.position) return null;
-
+function computeGeoPoint(satrec, time) {
   const gmst = satellite.gstime(time);
   const geo = satellite.eciToGeodetic(positionAndVelocity.position, gmst);
 
@@ -53,7 +52,8 @@ router.post("/", async (req, res) => {
     res.json({ message: "Satellite added", id: result.insertId });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Database error" });
+    const { status, body } = getDatabaseErrorResponse(err);
+    res.status(status).json(body);
   }
 });
 
@@ -87,7 +87,8 @@ router.get("/:norad", async (req, res) => {
     });
   } catch (error) {
     console.error("Satellite lookup failed:", error.message);
-    res.status(500).json({ error: "Database error" });
+    const { status, body } = getDatabaseErrorResponse(error);
+    res.status(status).json(body);
   }
 });
 
@@ -134,7 +135,8 @@ router.get("/:norad/orbit", async (req, res) => {
     });
   } catch (error) {
     console.error("Orbit lookup failed:", error.message);
-    res.status(500).json({ error: "Database error" });
+    const { status, body } = getDatabaseErrorResponse(error);
+    res.status(status).json(body);
   }
 });
 
