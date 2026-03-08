@@ -8,16 +8,12 @@ const lonEl = document.getElementById("longitude");
 const altEl = document.getElementById("altitude");
 
 const EARTH_RADIUS = 4;
-const targetPosition = new THREE.Vector3();
 
 /* API */
-const API_BASE =
-  "https://satelliteorbit-production.up.railway.app/api/satellite";
+const API_BASE = "https://satelliteorbit-production.up.railway.app/api/satellite";
 
 /* Scene */
-
 const scene = new THREE.Scene();
-
 const earthSystem = new THREE.Group();
 scene.add(earthSystem);
 
@@ -27,120 +23,49 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   1200
 );
-
 camera.position.set(0, 0, 12);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
-
 viewer.appendChild(renderer.domElement);
 
 /* Controls */
-
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-
-/* Lighting */
-
-const ambient = new THREE.AmbientLight(0x88a8ff, 0.55);
-const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-
-sun.position.set(7, 4, 8);
-
-scene.add(ambient);
-scene.add(sun);
+controls.minDistance = 6;
+controls.maxDistance = 30;
 
 /* Earth */
-
-const earthTexture = new THREE.TextureLoader().load(
-  "https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg"
-);
-
+const earthTexture = new THREE.TextureLoader().load("https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg");
 const earth = new THREE.Mesh(
   new THREE.SphereGeometry(EARTH_RADIUS, 64, 64),
-  new THREE.MeshStandardMaterial({ map: earthTexture })
+  new THREE.MeshBasicMaterial({ map: earthTexture }) // fully bright
 );
-
 earthSystem.add(earth);
 
-console.log("Scene loaded");
+/* Satellite management */
+const satellites = []; // store multiple satellites
 
-/* Atmosphere */
+function createSatelliteMarker(color = 0xffffff) {
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.04, 12, 12),
+    new THREE.MeshBasicMaterial({ color })
+  );
+  marker.visible = false;
+  earthSystem.add(marker);
 
-const atmosphere = new THREE.Mesh(
-  new THREE.SphereGeometry(EARTH_RADIUS * 1.03, 64, 64),
-  new THREE.MeshBasicMaterial({
-    color: 0x3fa9ff,
-    transparent: true,
-    opacity: 0.25
-  })
-);
 
-earthSystem.add(atmosphere);
-
-/* Stars */
-
-const starPositions = [];
-
-for (let i = 0; i < 2600; i++) {
-  starPositions.push(THREE.MathUtils.randFloatSpread(800));
-  starPositions.push(THREE.MathUtils.randFloatSpread(800));
-  starPositions.push(THREE.MathUtils.randFloatSpread(800));
+  return { marker, targetPosition: new THREE.Vector3(), groundTrack: [], norad: null, groundLine: null, orbitLine: null };
 }
 
-const starsGeometry = new THREE.BufferGeometry();
-
-starsGeometry.setAttribute(
-  "position",
-  new THREE.Float32BufferAttribute(starPositions, 3)
-);
-
-const stars = new THREE.Points(
-  starsGeometry,
-  new THREE.PointsMaterial({ color: 0x8ab4ff, size: 0.9 })
-);
-
-scene.add(stars);
-
-/* Satellite */
-
-const marker = new THREE.Mesh(
-  new THREE.SphereGeometry(0.12, 16, 16),
-  new THREE.MeshBasicMaterial({ color: 0xff4d6d })
-);
-
-marker.visible = false;
-earthSystem.add(marker);
-
-/* Halo */
-
-const halo = new THREE.Mesh(
-  new THREE.RingGeometry(0.2, 0.28, 36),
-  new THREE.MeshBasicMaterial({
-    color: 0x9ddbff,
-    side: THREE.DoubleSide,
-    transparent: true,
-    opacity: 0.8
-  })
-);
-
-halo.visible = false;
-earthSystem.add(halo);
-
-/* Convert lat/lon to 3D */
-
+/* Lat/Lon to 3D */
 function latLonToVector3(lat, lon, altitudeKm = 0) {
-
   const altitudeScale = altitudeKm / 6371;
-
   const radius = EARTH_RADIUS * (1 + altitudeScale * 0.15);
-
   const phi = (90 - lat) * Math.PI / 180;
   const theta = (lon + 180) * Math.PI / 180;
-
   return new THREE.Vector3(
     -(radius * Math.sin(phi) * Math.cos(theta)),
     radius * Math.cos(phi),
@@ -148,248 +73,105 @@ function latLonToVector3(lat, lon, altitudeKm = 0) {
   );
 }
 
-/* Ground Track */
-
-let groundTrack = [];
-
-let groundLine = null;
-
-function updateGroundTrack(lat, lon) {
-
-  const surfacePoint = latLonToVector3(lat, lon, 0);
-
-  groundTrack.push(surfacePoint);
-
-  if (groundTrack.length > 500)
-    groundTrack.shift();
-
-  if (groundLine)
-    earthSystem.remove(groundLine);
-
-  const geometry = new THREE.BufferGeometry().setFromPoints(groundTrack);
-
-  const material = new THREE.LineBasicMaterial({
-    color: 0xffcc66
-  });
-
-  groundLine = new THREE.Line(geometry, material);
-
-  earthSystem.add(groundLine);
-}
-
-/* Orbit Path */
-
-let orbitLine = null;
-
-function createOrbitPath(radius, inclination) {
-
-  if (orbitLine)
-    earthSystem.remove(orbitLine);
-
-  const points = [];
-
-  for (let i = 0; i <= 360; i++) {
-
-    const angle = THREE.MathUtils.degToRad(i);
-
-    points.push(
-      new THREE.Vector3(
-        radius * Math.cos(angle),
-        0,
-        radius * Math.sin(angle)
-      )
-    );
-  }
-
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-
-  const material = new THREE.LineBasicMaterial({
-    color: 0x44aaff
-  });
-
-  orbitLine = new THREE.LineLoop(geometry, material);
-
-  orbitLine.rotation.x = THREE.MathUtils.degToRad(inclination);
-
-  earthSystem.add(orbitLine);
-}
-
-/* UI */
-
-function setStatus(message, isError = false) {
-
-  statusEl.textContent = message;
-  statusEl.style.color = isError ? "#ff8d93" : "#d0dcf6";
-
-}
-
-function updateTelemetry(lat, lon, alt) {
-
-  latEl.textContent = `${lat.toFixed(2)}°`;
-  lonEl.textContent = `${lon.toFixed(2)}°`;
-  altEl.textContent = `${alt.toFixed(1)} km`;
-
-}
-
-/* API */
-
+/* Fetch satellite data */
 async function fetchSatellitePosition(norad) {
-
   const res = await fetch(`${API_BASE}/${norad}`);
-
-  if (!res.ok)
-    throw new Error("Satellite not found");
-
+  if (!res.ok) throw new Error("Satellite not found");
   return res.json();
-
 }
 
-/* Render Satellite */
-
-async function renderSatellitePosition(norad) {
-
-  const data = await fetchSatellitePosition(norad);
-
-  updateTelemetry(
-    data.latitude,
-    data.longitude,
-    data.altitude_km
-  );
-
-  const pos = latLonToVector3(
-    data.latitude,
-    data.longitude,
-    data.altitude_km
-  );
-
-  targetPosition.copy(pos);
-
-  halo.lookAt(camera.position);
-
-  marker.visible = true;
-  halo.visible = true;
-
-  updateGroundTrack(
-    data.latitude,
-    data.longitude
-  );
-
-  if (!orbitLine) {
-
-    const inclination =
-      Math.abs(data.latitude);
-
-    const orbitRadius = pos.length();
-
-    createOrbitPath(
-      orbitRadius,
-      inclination
-    );
-
-  }
-
+/* Add satellite */
+async function addSatellite(norad) {
+  const sat = createSatelliteMarker();
+  sat.norad = norad;
+  satellites.push(sat);
+  await updateSatellite(sat);
 }
 
-/* Tracking */
-
-let trackingInterval = null;
-
-async function trackSatellite() {
-
-  const norad = noradInput.value.trim();
-
-  if (!/^\d+$/.test(norad)) {
-
-    setStatus(
-      "Enter a valid NORAD ID",
-      true
-    );
-
-    return;
-
-  }
-
-  if (trackingInterval)
-    clearInterval(trackingInterval);
-
-  setStatus(`Tracking NORAD ${norad}`);
-
+/* Update single satellite */
+async function updateSatellite(sat) {
   try {
+    const data = await fetchSatellitePosition(sat.norad);
 
-    await renderSatellitePosition(norad);
+    const pos = latLonToVector3(data.latitude, data.longitude, data.altitude_km);
+    sat.targetPosition.copy(pos);
 
-    trackingInterval =
-      setInterval(() => {
+    sat.marker.visible = true;
 
-        renderSatellitePosition(norad)
-        .catch(err =>
-          setStatus(err.message, true)
-        );
+    // Update ground track
+    const surfacePoint = latLonToVector3(data.latitude, data.longitude, 0);
+    sat.groundTrack.push(surfacePoint);
+    if (sat.groundTrack.length > 500) sat.groundTrack.shift();
 
-      }, 3000);
+    if (sat.groundLine) earthSystem.remove(sat.groundLine);
+    const geometry = new THREE.BufferGeometry().setFromPoints(sat.groundTrack);
+    const material = new THREE.LineBasicMaterial({ color: 0xffcc66 });
+    sat.groundLine = new THREE.Line(geometry, material);
+    earthSystem.add(sat.groundLine);
 
+    // Orbit line (inclination)
+    if (!sat.orbitLine) {
+      const orbitRadius = pos.length();
+      const points = [];
+      for (let i = 0; i <= 360; i++) {
+        const angle = THREE.MathUtils.degToRad(i);
+        points.push(new THREE.Vector3(orbitRadius * Math.cos(angle), 0, orbitRadius * Math.sin(angle)));
+      }
+      const geometryOrbit = new THREE.BufferGeometry().setFromPoints(points);
+      const materialOrbit = new THREE.LineBasicMaterial({ color: 0x44aaff });
+      sat.orbitLine = new THREE.LineLoop(geometryOrbit, materialOrbit);
+      sat.orbitLine.rotation.x = THREE.MathUtils.degToRad(Math.abs(data.latitude));
+      earthSystem.add(sat.orbitLine);
+    }
+
+  } catch (err) {
+    console.error(err);
   }
-
-  catch (err) {
-
-    setStatus(err.message, true);
-
-  }
-
 }
 
-/* Button */
+/* Automatic update all satellites */
+setInterval(() => {
+  satellites.forEach(sat => updateSatellite(sat));
+}, 3000);
 
-trackBtn.addEventListener(
-  "click",
-  trackSatellite
-);
+/* Click info */
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+window.addEventListener("click", e => {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
 
-noradInput.addEventListener(
-  "keydown",
-  e => {
-    if (e.key === "Enter")
-      trackSatellite();
+  const intersects = satellites.map(s => s.marker);
+  const hit = raycaster.intersectObjects(intersects);
+  if (hit.length > 0) {
+    const sat = satellites.find(s => s.marker === hit[0].object);
+    setStatus(`NORAD: ${sat.norad}`);
+    latEl.textContent = sat.targetPosition.y.toFixed(2);
+    lonEl.textContent = sat.targetPosition.z.toFixed(2);
+    altEl.textContent = (sat.targetPosition.length() - EARTH_RADIUS).toFixed(2) + " km";
   }
-);
-
-/* Resize */
-
-window.addEventListener("resize", () => {
-
-  camera.aspect =
-    window.innerWidth / window.innerHeight;
-
-  camera.updateProjectionMatrix();
-
-  renderer.setSize(
-    window.innerWidth,
-    window.innerHeight
-  );
-
 });
 
-/* Animation */
-
-function animate() {
-
-  marker.position.lerp(
-    targetPosition,
-    0.15
-  );
-
-  halo.position.copy(
-    marker.position
-  );
-
-  halo.rotation.z += 0.03;
-
-  controls.update();
-
-  renderer.render(scene, camera);
-
-  requestAnimationFrame(animate);
-
+/* UI */
+function setStatus(msg, isError = false) {
+  statusEl.textContent = msg;
+  statusEl.style.color = isError ? "#ff8d93" : "#d0dcf6";
 }
 
+/* Animate */
+function animate() {
+  satellites.forEach(sat => {
+    sat.marker.position.lerp(sat.targetPosition, 0.15);
+  });
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
 animate();
+
+/* Track button - enter multiple NORAD IDs separated by commas */
+trackBtn.addEventListener("click", () => {
+  const ids = noradInput.value.split(",").map(x => x.trim());
+  ids.forEach(id => addSatellite(id));
+});
