@@ -57,7 +57,7 @@ function createSatelliteMarker(color = 0xffffff) {
   earthSystem.add(marker);
 
 
-  return { marker, targetPosition: new THREE.Vector3(), groundTrack: [], norad: null, groundLine: null};
+  return { marker, targetPosition: new THREE.Vector3(), groundTrack: [], data};
 }
 
 /* Lat/Lon to 3D */
@@ -70,6 +70,33 @@ function latLonToVector3(lat, lon, altitudeKm = 0) {
     radius * Math.cos(phi),
     radius * Math.sin(phi) * Math.sin(theta)
   );
+}
+
+async function fetchAllSatellites() {
+  try {
+    const res = await fetch(API_BASE); // fetch all satellites
+    if (!res.ok) throw new Error("Failed to fetch satellites");
+    const data = await res.json();
+
+    data.forEach(satData => {
+      const sat = createSatelliteMarker(satData);
+      satellites.push(sat);
+
+      const pos = latLonToVector3(satData.latitude, satData.longitude, satData.altitude_km);
+      sat.targetPosition.copy(pos);
+      sat.marker.visible = true;
+
+      // Add initial ground track point
+      const surfacePoint = latLonToVector3(satData.latitude, satData.longitude, 0);
+      sat.groundTrack.push(surfacePoint);
+      const geometry = new THREE.BufferGeometry().setFromPoints(sat.groundTrack);
+      const material = new THREE.LineBasicMaterial({ color: 0xffcc66 });
+      sat.groundLine = new THREE.Line(geometry, material);
+      earthSystem.add(sat.groundLine);
+    });
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 /* Fetch satellite data */
@@ -88,37 +115,27 @@ async function addSatellite(norad) {
 }
 
 /* Update single satellite */
-async function updateSatellite(sat) {
-  try {
-    const data = await fetchSatellitePosition(sat.norad);
-
-    const pos = latLonToVector3(data.latitude, data.longitude, data.altitude_km);
+function updateSatellites() {
+  satellites.forEach(sat => {
+    // Update 3D position
+    const pos = latLonToVector3(sat.data.latitude, sat.data.longitude, sat.data.altitude_km);
     sat.targetPosition.copy(pos);
 
-    sat.marker.visible = true;
-
     // Update ground track
-    const surfacePoint = latLonToVector3(data.latitude, data.longitude, 0);
+    const surfacePoint = latLonToVector3(sat.data.latitude, sat.data.longitude, 0);
     sat.groundTrack.push(surfacePoint);
     if (sat.groundTrack.length > 500) sat.groundTrack.shift();
 
+    // Refresh line
     if (sat.groundLine) earthSystem.remove(sat.groundLine);
     const geometry = new THREE.BufferGeometry().setFromPoints(sat.groundTrack);
-    const material = new THREE.LineBasicMaterial({ color: 0xffcc66 });
-    sat.groundLine = new THREE.Line(geometry, material);
+    sat.groundLine.geometry = geometry; // update geometry
     earthSystem.add(sat.groundLine);
-
-    // Orbit line (inclination)
-
-  } catch (err) {
-    console.error(err);
-  }
+  });
 }
 
-/* Automatic update all satellites */
-setInterval(() => {
-  satellites.forEach(sat => updateSatellite(sat));
-}, 3000);
+// Call update every 3 seconds (or however often you want)
+setInterval(updateSatellites, 3000);
 
 /* Click info */
 const raycaster = new THREE.Raycaster();
@@ -145,7 +162,6 @@ function setStatus(msg, isError = false) {
   statusEl.style.color = isError ? "#ff8d93" : "#d0dcf6";
 }
 
-/* Animate */
 function animate() {
   satellites.forEach(sat => {
     sat.marker.position.lerp(sat.targetPosition, 0.15);
