@@ -124,7 +124,22 @@ async function trackSatellite() {
   setStatus(`Tracking NORAD ${norad}...`);
 
   try {
-    const response = await fetch(`${API_BASE}/${norad}`);
+    setInterval(async () => {
+  const response = await fetch(`${API_BASE}/${norad}`);
+  const data = await response.json();
+
+  updateTelemetry(data.latitude, data.longitude, data.altitude_km);
+
+  const position = latLonToVector3(
+    data.latitude,
+    data.longitude,
+    data.altitude_km
+  );
+
+  marker.position.copy(position);
+  halo.position.copy(position);
+
+}, 3000);
     if (!response.ok) {
       throw new Error(response.status === 404 ? "Satellite not found in database." : `API error (${response.status}).`);
     }
