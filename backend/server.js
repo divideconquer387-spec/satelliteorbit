@@ -6,7 +6,7 @@ const satelliteRoute = require("./satelliteRoute");
 const { checkConnection } = require("./db");
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -20,6 +20,10 @@ app.use("/api/satellite", satelliteRoute);
 
 app.get(/^(?!\/api).*/, (_req, res) => {
   res.sendFile(path.join(__dirname, "..", "frontend", "index.html"));
+});
+
+app.get("/", (req, res) => {
+  res.send("Satellite Tracker API running");
 });
 
 app.listen(PORT, () => {

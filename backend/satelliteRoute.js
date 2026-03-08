@@ -20,10 +20,7 @@ function getTleByNorad(noradId) {
       "SELECT tle_line1, tle_line2 FROM tle_data WHERE norad_id = ? LIMIT 1",
       [noradId],
       (err, rows) => {
-        if (err) {
-          reject(err);
-          return;
-        }
+        if (err) return reject(err);
         resolve(rows?.[0] ?? null);
       }
     );
@@ -32,9 +29,8 @@ function getTleByNorad(noradId) {
 
 function computeGeoPoint(satrec, time) {
   const positionAndVelocity = satellite.propagate(satrec, time);
-  if (!positionAndVelocity.position) {
-    return null;
-  }
+
+  if (!positionAndVelocity.position) return null;
 
   const gmst = satellite.gstime(time);
   const geo = satellite.eciToGeodetic(positionAndVelocity.position, gmst);
@@ -46,40 +42,81 @@ function computeGeoPoint(satrec, time) {
   };
 }
 
+/////////////////////////////////////////////////
+// ADD SATELLITE
+/////////////////////////////////////////////////
+
+router.post("/satellite", async (req, res) => {
+  const { name, norad_id, orbit_type, inclination, period } = req.body;
+
+  try {
+    const sql = `
+      INSERT INTO satellites (name, norad_id, orbit_type, inclination, period)
+      VALUES (?, ?, ?, ?, ?)
+    `;
+
+    const [result] = await db.query(sql, [
+      name,
+      norad_id,
+      orbit_type,
+      inclination,
+      period
+    ]);
+
+    res.json({ message: "Satellite added", id: result.insertId });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+/////////////////////////////////////////////////
+// CURRENT POSITION
+/////////////////////////////////////////////////
+
 router.get("/:norad", async (req, res) => {
   const noradId = parseNorad(req.params.norad);
+
   if (!noradId) {
     return res.status(400).json({ error: "Invalid NORAD ID" });
   }
 
   try {
     const tle = await getTleByNorad(noradId);
+
     if (!tle) {
       return res.status(404).json({ error: "Satellite not found" });
     }
 
     const satrec = satellite.twoline2satrec(tle.tle_line1, tle.tle_line2);
     const now = new Date();
+
     const point = computeGeoPoint(satrec, now);
 
     if (!point) {
       return res.status(500).json({ error: "Unable to compute satellite position" });
     }
 
-    return res.json({
+    res.json({
       noradId,
       timestamp: now.toISOString(),
       ...point
     });
+
   } catch (error) {
     console.error("Satellite lookup failed:", error.message);
-    return res.status(500).json({ error: "Database error" });
+    res.status(500).json({ error: "Database error" });
   }
 });
 
-// Orbit track points for chart/path drawing (default: next 90 minutes)
+/////////////////////////////////////////////////
+// ORBIT PATH
+/////////////////////////////////////////////////
+
 router.get("/:norad/orbit", async (req, res) => {
   const noradId = parseNorad(req.params.norad);
+
   const samples = Math.min(Math.max(Number.parseInt(req.query.samples, 10) || 90, 10), 720);
   const stepMinutes = Math.min(Math.max(Number.parseInt(req.query.stepMinutes, 10) || 1, 1), 30);
 
@@ -88,7 +125,9 @@ router.get("/:norad/orbit", async (req, res) => {
   }
 
   try {
+
     const tle = await getTleByNorad(noradId);
+
     if (!tle) {
       return res.status(404).json({ error: "Satellite not found" });
     }
@@ -97,28 +136,33 @@ router.get("/:norad/orbit", async (req, res) => {
     const start = Date.now();
 
     const points = [];
-    for (let i = 0; i < samples; i += 1) {
+
+    for (let i = 0; i < samples; i++) {
+
       const time = new Date(start + i * stepMinutes * 60 * 1000);
+
       const point = computeGeoPoint(satrec, time);
-      if (!point) {
-        continue;
-      }
+
+      if (!point) continue;
+
       points.push({
         timestamp: time.toISOString(),
         ...point,
         altitude_ratio: point.altitude_km / EARTH_RADIUS_KM
       });
+
     }
 
-    return res.json({
+    res.json({
       noradId,
       samples: points.length,
       stepMinutes,
       points
     });
+
   } catch (error) {
     console.error("Orbit lookup failed:", error.message);
-    return res.status(500).json({ error: "Database error" });
+    res.status(500).json({ error: "Database error" });
   }
 });
 
