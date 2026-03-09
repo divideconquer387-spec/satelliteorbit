@@ -21,7 +21,7 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "satellite-backend" });
 });
 
-app.use("/api/satellite", satelliteRoute);
+app.use("/api/satellites", satelliteRoute);
 
 app.get(/^(?!\/api).*/, (_req, res) => {
   res.sendFile(path.join(__dirname, "..", "frontend", "index.html"));
