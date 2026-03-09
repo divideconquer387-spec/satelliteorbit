@@ -76,7 +76,7 @@ function buildPoolConfig() {
     port: Number(DB_PORT || MYSQLPORT || 44905),
     user: DB_USER || MYSQLUSER || "root",
     password: DB_PASSWORD || MYSQLPASSWORD || "zBkJtGXReVesgChFbwyaTmwcASEoSoHm",
-    database: DB_NAME || MYSQLDATABASE || "railway"",
+    database: DB_NAME || MYSQLDATABASE || "railway",
     ssl: getSslConfig(),
     waitForConnections: true,
     connectionLimit: 10,
