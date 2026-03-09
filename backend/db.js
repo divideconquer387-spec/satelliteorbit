@@ -44,6 +44,18 @@ function getSslConfig() {
   return shouldUseSsl() ? { rejectUnauthorized: false } : undefined;
 }
 
+function isTransientConnectionError(error) {
+  const transientCodes = new Set([
+    "ENETUNREACH",
+    "ECONNREFUSED",
+    "ETIMEDOUT",
+    "EHOSTUNREACH",
+    "ECONNRESET"
+  ]);
+
+  return transientCodes.has(error?.code);
+}
+
 function buildPoolConfig() {
   if (!hasDatabaseConfig) {
     return null;
@@ -112,6 +124,13 @@ async function checkConnection() {
     connection.release();
     console.log("Database pool connected");
   } catch (error) {
+    if (isTransientConnectionError(error)) {
+      console.warn(
+        `Database is temporarily unreachable (${error.code}). Starting API in degraded mode with external-data fallbacks.`
+      );
+      return;
+    }
+
     console.error("DB connection failed:", error.message || error.code);
     throw error;
   }
@@ -121,7 +140,7 @@ async function initializeDatabase() {
   if (!hasDatabaseConfig) {
     return;
   }
-
+try{
   await db.query(`
     CREATE TABLE IF NOT EXISTS satellites (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -145,6 +164,16 @@ async function initializeDatabase() {
       UNIQUE KEY unique_norad_tle (norad_id)
     )
   `);
+    } catch (error) {
+    if (isTransientConnectionError(error)) {
+      console.warn(
+        `Skipping database initialization because the database is temporarily unreachable (${error.code}).`
+      );
+      return;
+    }
+
+    throw error;
+}
 }
 
 
