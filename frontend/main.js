@@ -20,7 +20,7 @@ const apiBaseMeta = document
   .querySelector('meta[name="api-base"]')
   ?.content?.trim();
 
-const API_BASE = apiBaseMeta || "/api/satellite";
+const API_BASE = apiBaseMeta || "/api/satellites";
 
 /* Scene */
 const scene = new THREE.Scene();
