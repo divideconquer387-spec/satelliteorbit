@@ -23,8 +23,10 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/satellite", satelliteRoute);
 
-app.get("*", (_req, res) => {
-  res.sendFile(path.join(__dirname, "..", "frontend", "index.html"));
+app.use((req, res) => {
+  if (!req.path.startsWith("/api")) {
+    res.sendFile(path.join(__dirname, "..", "frontend", "index.html"));
+  }
 });
 
 async function bootstrap() {
