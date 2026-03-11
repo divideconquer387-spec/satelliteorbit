@@ -88,7 +88,6 @@ async function addSatellite(norad) {
 }
 
 //Function to generate orbit points
-<script src="https://unpkg.com/satellite.js/dist/satellite.min.js"></script>
 function generateOrbitPoints(tle1, tle2) {
 
   const satrec = satellite.twoline2satrec(tle1, tle2);
@@ -97,7 +96,7 @@ function generateOrbitPoints(tle1, tle2) {
 
   const now = new Date();
 
-  for (let i = 0; i < 360; i += 2) {
+  for (let i = 0; i < 120; i += 2) {
 
     const futureTime = new Date(now.getTime() + i * 60000);
 
@@ -142,7 +141,7 @@ function drawOrbit(sat, tle1, tle2) {
     color: 0x00ffff
   });
 
-  sat.orbitLine = new THREE.LineLoop(geometry, material);
+  sat.orbitLine = new THREE.Line(geometry, material);
 
   earthSystem.add(sat.orbitLine);
 }
@@ -162,7 +161,11 @@ async function updateSatellite(sat) {
     sat.groundTrack.push(surfacePoint);
     if (sat.groundTrack.length > 500) sat.groundTrack.shift();
 
-    if (sat.groundLine) earthSystem.remove(sat.groundLine);
+    if (sat.groundLine) {
+  sat.groundLine.geometry.dispose();
+  sat.groundLine.material.dispose();
+  earthSystem.remove(sat.groundLine);
+}
     const geometry = new THREE.BufferGeometry().setFromPoints(sat.groundTrack);
     const material = new THREE.LineBasicMaterial({ color: 0xffcc66 });
     sat.groundLine = new THREE.Line(geometry, material);
