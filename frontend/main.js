@@ -87,6 +87,66 @@ async function addSatellite(norad) {
   await updateSatellite(sat);
 }
 
+//Function to generate orbit points
+<script src="https://unpkg.com/satellite.js/dist/satellite.min.js"></script>
+function generateOrbitPoints(tle1, tle2) {
+
+  const satrec = satellite.twoline2satrec(tle1, tle2);
+
+  const points = [];
+
+  const now = new Date();
+
+  for (let i = 0; i < 360; i += 2) {
+
+    const futureTime = new Date(now.getTime() + i * 60000);
+
+    const positionAndVelocity = satellite.propagate(satrec, futureTime);
+
+    if (!positionAndVelocity.position) continue;
+
+    const gmst = satellite.gstime(futureTime);
+
+    const geo = satellite.eciToGeodetic(positionAndVelocity.position, gmst);
+
+    const lat = satellite.degreesLat(geo.latitude);
+    const lon = satellite.degreesLong(geo.longitude);
+    const alt = geo.height;
+
+    const pos = latLonToVector3(lat, lon, alt);
+
+    points.push(pos);
+
+  }
+
+  return points;
+}
+
+//Draw orbit ring
+function drawOrbit(sat, tle1, tle2) {
+
+  const points = generateOrbitPoints(tle1, tle2);
+
+  if (sat.orbitLine) {
+
+    sat.orbitLine.geometry.dispose();
+    sat.orbitLine.material.dispose();
+
+    earthSystem.remove(sat.orbitLine);
+
+  }
+
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+
+  const material = new THREE.LineBasicMaterial({
+    color: 0x00ffff
+  });
+
+  sat.orbitLine = new THREE.LineLoop(geometry, material);
+
+  earthSystem.add(sat.orbitLine);
+}
+
 /* Update single satellite */
 async function updateSatellite(sat) {
   try {
@@ -107,6 +167,10 @@ async function updateSatellite(sat) {
     const material = new THREE.LineBasicMaterial({ color: 0xffcc66 });
     sat.groundLine = new THREE.Line(geometry, material);
     earthSystem.add(sat.groundLine);
+
+    if (!sat.orbitLine && data.tle_line1) {
+    drawOrbit(sat, data.tle_line1, data.tle_line2);
+  }
 
   } catch (err) {
     console.error(err);
@@ -158,4 +222,13 @@ animate();
 trackBtn.addEventListener("click", () => {
   const ids = noradInput.value.split(",").map(x => x.trim());
   ids.forEach(id => addSatellite(id));
+});
+
+window.addEventListener("resize", () => {
+
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
 });
