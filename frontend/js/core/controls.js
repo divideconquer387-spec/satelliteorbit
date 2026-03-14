@@ -1,6 +1,6 @@
-export function createControls(camera, renderer) {
-
-  const controls = new THREE.OrbitControls(camera, renderer);
+export function createControls(camera, rendererOrDomElement) {
+  const domElement = rendererOrDomElement?.domElement ?? rendererOrDomElement;
+  const controls = new THREE.OrbitControls(camera, domElement);
 
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
