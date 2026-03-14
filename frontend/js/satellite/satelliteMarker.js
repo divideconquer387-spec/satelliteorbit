@@ -11,6 +11,10 @@ export function createSatelliteMarker(color = 0x7df4ff) {
     marker,
     targetPosition: new THREE.Vector3(),
     norad: null,
-    latestData: null
+    latestData: null,
+    orbitLine: null,
+    groundLine: null,
+    altitudeBridges: null,
+    lastPredictionAt: 0
   };
 }
