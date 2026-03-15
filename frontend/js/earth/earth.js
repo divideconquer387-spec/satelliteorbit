@@ -1,4 +1,4 @@
-const EARTH_RADIUS = 5;
+const EARTH_RADIUS = 4;
 
 export function createEarth(group) {
 

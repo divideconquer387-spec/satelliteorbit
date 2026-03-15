@@ -7,7 +7,6 @@ export function createRenderer(container) {
     1200
   );
 
-
   camera.position.set(0, 2.2, 18);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });

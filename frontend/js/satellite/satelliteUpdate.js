@@ -18,18 +18,14 @@ async function updateSatellite(sat) {
   sat.targetPosition.set(x, y, z);
   sat.marker.visible = true;
 
-  // --- Convert to lat/lon
-// Inside updateSatellite(sat)
 const geo = satellite.eciToGeodetic(posVel.position, gmst);
 const lat = satellite.degreesLat(geo.latitude);
 const lon = satellite.degreesLong(geo.longitude);
 const alt = geo.height;
 
-// 1. Position the marker using Lat/Lon/Alt (This keeps it in the Earth-Fixed frame)
 const satVector = latLonToVector3(lat, lon, alt);
 sat.targetPosition.copy(satVector); 
 
-// 3. Update Altitude Line - Now they will align perfectly
 sat.altitudeLine.geometry.setFromPoints([groundPoint, satVector]);
 
 sat.latestData = {
@@ -38,16 +34,13 @@ sat.latestData = {
   altitude_km: alt
 };
 
-// --- Ground point
 const groundPoint = latLonToVector3(lat, lon, 0);
 
-// altitude line (ground → satellite)
 sat.altitudeLine.geometry.setFromPoints([
   groundPoint,
   sat.targetPosition.clone()
 ]);
 
-// --- Ground track trail
 sat.groundPoints.push(groundPoint);
 
 if (sat.groundPoints.length > 300) {
