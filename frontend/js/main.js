@@ -1,4 +1,3 @@
-
 import { createScene } from "./core/scene.js";
 import { createRenderer } from "./core/renderer.js";
 import { createControls } from "./core/controls.js";
